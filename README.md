@@ -532,6 +532,10 @@ a running instance (API calls / admin UI) during a later working session, and **
   with the real `cases` collection nested and relabeled underneath it as "TFGBV Case."
 - Project branding (name, colour), per-role 2FA enforcement policies, and a small
   Custom CSS block sizing the "Create New" / "Add Existing" buttons consistently.
+- `evidence_files` (upload-only, no "Add Existing" — each piece of evidence should be a
+  fresh upload, not a file reused from elsewhere), and the Technical Support / TFGBV
+  conditional visibility on the Review fields (`review_decision`, `review_remark`,
+  `review_date` are TFGBV-only; a Technical Support case never shows an approval step).
 
 None of this is destructive or hard to redo — it's ordinary Directus configuration — but
 until it's folded back into `seed_schema.py` (or a follow-up script), treat a fresh
