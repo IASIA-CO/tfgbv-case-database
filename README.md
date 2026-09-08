@@ -22,6 +22,7 @@ audit trail of every change.
 - [Database guarantees](#database-guarantees)
 - [Test data](#test-data)
 - [Operations](#operations)
+- [Troubleshooting](#troubleshooting)
 - [Importing the legacy workbook](#importing-the-legacy-workbook)
 - [Handling real case data](#handling-real-case-data)
 - [Configuration not yet in the scripts](#configuration-not-yet-in-the-scripts)
@@ -61,29 +62,59 @@ container.
 
 ## Requirements
 
-- Docker Desktop (or Docker Engine with Compose v2)
-- Python 3.9+ on the host, for the setup scripts — standard library only, no packages
-- Roughly 2 GB of free disk
+- **Docker Desktop** (or Docker Engine with Compose v2) — on macOS, give it real memory:
+  Docker Desktop → Settings → Resources → at least 4 GB.
+- **Python 3.9+** on the host, for the setup scripts — standard library only, no `pip
+  install` needed for the scripts themselves.
+- **Node.js 18+ and npm**, only if you'll build the extensions (Setup step 6). Not
+  needed just to run the stack.
+- **git**, to clone this repository.
+- **At least 8 GB of free disk**, more if you'll `npm install` the extensions — Docker
+  images alone are close to 2 GB, and a full Node `node_modules` tree easily doubles
+  that. Running low on disk mid-setup produces confusing failures in npm and Docker
+  alike rather than a clear "disk full" error — see
+  [Troubleshooting](#troubleshooting) if things start failing for no obvious reason.
+- **Two free ports on your machine**: `8057` (the application) and `8027` (Mailpit, the
+  local email catcher — see [Email](#email)). Postgres and Redis run inside Docker's own
+  network and are never exposed to your machine, so they can't conflict with anything
+  else you have installed.
 
 ---
 
 ## Setup
 
-**1. Configure the environment**
+**1. Clone the repository and configure your own environment**
 
 ```bash
+git clone https://github.com/IASIA-CO/tfgbv-case-database.git
+cd tfgbv-case-database
 cp .env.example .env
 ```
 
-Edit `.env` and set every value. Generate a strong `SECRET`:
+`.env` is yours alone — it holds this install's credentials and never gets committed
+(`.gitignore` blocks it). Don't copy an `.env` file from someone else's machine or an old
+backup; generate your own values so you're not sharing secrets with anyone else's install.
 
-```bash
-openssl rand -hex 32
-```
+Edit `.env` and set every value:
 
-`ADMIN_EMAIL` and `ADMIN_PASSWORD` create the first administrator, and apply **only when
-the database is empty** — changing them later has no effect. Change the password from
-inside the application instead.
+- **`SECRET`** — generate a fresh one, don't reuse an example or another install's value:
+  ```bash
+  openssl rand -hex 32
+  ```
+- **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** — create the first administrator account.
+  These apply **only when the database is empty** — changing them later in `.env` does
+  nothing, because by then the account already exists. To change the password after
+  setup, do it from inside the application (or see
+  [Operations](#operations) if you're locked out).
+- **`DB_PASSWORD`** — any strong password; this database is only ever reachable from
+  inside Docker's own network, never from your host machine directly.
+- **`PUBLIC_URL`** — leave as `http://localhost:8057` unless you changed the port
+  mapping in `docker-compose.yml` (see below).
+
+**If port 8057 or 8027 is already used by something else on your machine**, edit the
+`ports:` line for that service in `docker-compose.yml` — e.g. change `"8057:8055"` to
+`"9000:8055"` — and update `PUBLIC_URL` in `.env` to match. The second number (the
+container's own port) must stay the same; only change the first.
 
 **2. Start the stack**
 
@@ -400,6 +431,49 @@ a rebuild.
 The container healthcheck uses `/server/ping`. The fuller `/server/health` endpoint also
 probes file storage, which reports failures on macOS bind mounts even when uploads work
 correctly.
+
+---
+
+## Troubleshooting
+
+Real problems hit while running this stack, not hypothetical ones.
+
+**Docker or npm fail with confusing, unrelated-looking errors.** Check disk space first
+— `df -h`. A disk that's actually full doesn't produce a clear "disk full" message from
+either tool; it shows up as npm silently failing partway through an install, or Docker's
+daemon becoming unresponsive. If space is tight, `npm cache clean --force` is usually the
+safe, fast win (npm re-downloads packages on demand; nothing is lost).
+
+**`npm cache clean --force` fails with `EACCES`.** Something ran `npm` with `sudo` on
+this machine at some point, leaving root-owned files in `~/.npm`. Fix once, permanently:
+```bash
+sudo chown -R $(id -u):$(id -g) ~/.npm
+```
+
+**"Invalid user credentials" even though the password is correct.** Directus returns the
+exact same error for a wrong password and for a *suspended* account — deliberately, so a
+login attempt can't be used to tell which case it is. An account gets auto-suspended
+after too many failed logins in a row (`auth_login_attempts` in Directus Settings). This
+is almost never actually a forgotten password; it's usually `pii-access-sync` retrying
+every few minutes with a stale `ADMIN_PASSWORD` left over from a manual password change
+in the app. Fix in this order — reversing it re-triggers the same lockout:
+1. `docker compose stop pii-access-sync`
+2. Reactivate the account: `UPDATE directus_users SET status='active' WHERE email='...'`
+   against the `database` container.
+3. Update `ADMIN_PASSWORD` in `.env` to the password actually in use.
+4. Only then `docker compose up -d pii-access-sync`.
+
+**Running two instances of this stack on one machine.** Give each its own `.env` (SECRET,
+DB_PASSWORD, ports) and its own Compose project name
+(`COMPOSE_PROJECT_NAME=other-instance docker compose up -d`), or the two will fight over
+container names, ports, and — because cookies aren't scoped by port — even sign each
+other out. If you're logged into one and get silently bounced to the login screen for no
+reason, a second instance sharing `localhost` is a common cause: clear the
+`directus_session_token` cookie for `localhost` and log in again.
+
+**Extensions don't show up after building them.** Directus only loads extensions at
+startup. After running the build step, `docker compose restart directus` — a rebuild
+alone doesn't reload the running container.
 
 ---
 
