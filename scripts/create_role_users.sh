@@ -11,8 +11,11 @@ cd "$(dirname "$0")/.."
 BASE="${BASE:-http://localhost:8057}"
 set -a; . ./.env; set +a
 
-# Password used for every test account. Change it here before running.
-PW="${TEST_PASSWORD:-TFGBVdev!2026}"
+# Password used for every test account. Pass one explicitly:
+#   TEST_PASSWORD='...' ./scripts/create_role_users.sh
+# Otherwise a random one is generated each run and printed at the end — never a
+# fixed default, so this script can't bake a guessable password into source control.
+PW="${TEST_PASSWORD:-$(openssl rand -base64 18)}"
 
 TOKEN=$(curl -s -X POST "$BASE/auth/login" -H 'Content-Type: application/json' \
   -d "$(printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PASSWORD")" \
