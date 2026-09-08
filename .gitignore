@@ -3,8 +3,11 @@
 
 # Runtime directories
 uploads/
-extensions/
 templates/
+
+# Extensions: track source, not installed packages or build output.
+extensions/*/node_modules/
+extensions/*/dist/
 
 # Case data may contain survivor and perpetrator PII — never commit it.
 # These rules are a safety net, not a policy: keep case data outside the repository.
@@ -34,8 +37,9 @@ backup*
 *.pdf
 
 # JSON is Directus's export format, so a collection dump lands here by default.
-# If the project ever needs a tracked .json, add a negation below it.
 *.json
+!extensions/*/package.json
+!extensions/*/package-lock.json
 
 # Generated locally
 docs/demo_manifest.json

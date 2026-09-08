@@ -178,11 +178,10 @@ def generate(count):
             "reported_by": pick(REPORTERS),
             "survivor": survivor["id"],
             "perpetrator_relation": pick(RELATIONS),
-            "caption_main_content": f"{SYNTHETIC_MARK} generated record {i:03d}",
-            "incident_summary": (
+            "contextual_information": (
                 f"{SYNTHETIC_MARK} Synthetic record for testing and dashboard "
                 f"development. Contains no real case information."),
-            "impact_on_survivor": random.choice(IMPACTS),
+            "comment": random.choice(IMPACTS),
             "platforms": m2m("platforms_id", pick_many(PLATFORMS, 1, 3)),
             "harassment_types": m2m("harassment_types_id", pick_many(HARASSMENT, 1, 3)),
             "interventions": m2m("interventions_id", pick_many(INTERVENTIONS, 1, 2)),

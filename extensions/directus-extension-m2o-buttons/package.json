@@ -1,0 +1,16 @@
+{
+  "name": "directus-extension-m2o-buttons",
+  "description": "Many-to-one field with labelled Create New / Add Existing buttons.",
+  "version": "1.0.0",
+  "type": "module",
+  "directus:extension": {
+    "type": "interface",
+    "path": "dist/index.js",
+    "source": "src/index.js",
+    "host": "^11.0.0"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "latest",
+    "vue": "^3.4.0"
+  }
+}

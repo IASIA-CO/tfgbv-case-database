@@ -236,9 +236,8 @@ def main():
                 "severity": V["severity_levels"].resolve(pick(row, "severity")),
                 "perpetrator_relation": V["perpetrator_relations"].resolve(
                     pick(row, "relationship to victim", "perpetrator  relationship")),
-                "caption_main_content": pick(row, "caption written"),
-                "incident_summary": pick(row, "summary of the incident"),
-                "impact_on_survivor": pick(row, "impact on the victim"),
+                "contextual_information": pick(row, "summary of the incident"),
+                "comment": pick(row, "impact on the victim"),
                 "organization": org_id,
                 "platforms": V["platforms"].resolve_many(pick(row, "platform")),
                 "harassment_types": V["harassment_types"].resolve_many(

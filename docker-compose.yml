@@ -1,7 +1,7 @@
 services:
   database:
     image: postgis/postgis:16-3.4-alpine
-    container_name: odc-directus-db
+    container_name: odc-tfgbv-db
     restart: unless-stopped
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -17,7 +17,7 @@ services:
 
   cache:
     image: redis:7-alpine
-    container_name: odc-directus-cache
+    container_name: odc-tfgbv-cache
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -27,10 +27,10 @@ services:
 
   directus:
     image: directus/directus:11
-    container_name: odc-directus
+    container_name: odc-tfgbv-directus
     restart: unless-stopped
     ports:
-      - "8055:8055"
+      - "8057:8055"
     volumes:
       - ./uploads:/directus/uploads
       - ./extensions:/directus/extensions
@@ -40,6 +40,10 @@ services:
         condition: service_healthy
       cache:
         condition: service_healthy
+      mail:
+        # service_started, not service_healthy: mail is not required for Directus to
+        # boot, so a mailpit healthcheck quirk must never block the whole stack.
+        condition: service_started
     environment:
       SECRET: ${SECRET}
       PUBLIC_URL: ${PUBLIC_URL}
@@ -59,6 +63,15 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
+      # Mail goes to the mailpit catcher, never to the real internet. Nothing here
+      # is a credential: mailpit accepts any auth and delivers to its own web UI.
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@odc-tfgbv.local}
+      EMAIL_TRANSPORT: smtp
+      EMAIL_SMTP_HOST: mail
+      EMAIL_SMTP_PORT: "1025"
+      EMAIL_SMTP_SECURE: "false"
+      EMAIL_SMTP_IGNORE_TLS: "true"
+
       WEBSOCKETS_ENABLED: "true"
       TELEMETRY: "false"
     healthcheck:
@@ -71,13 +84,27 @@ services:
       retries: 12
       start_period: 30s
 
+  # Catches every email Directus sends (password resets, user invites) and shows it
+  # at http://localhost:8027 instead of delivering it. Nothing leaves the machine.
+  # SMTP (1025) is deliberately not published: only the compose network needs it.
+  mail:
+    image: axllent/mailpit:v1.21
+    container_name: odc-tfgbv-mail
+    restart: unless-stopped
+    ports:
+      - "8027:8025"
+    environment:
+      MP_MAX_MESSAGES: "5000"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+
   # Revokes expired PII access grants. Runs with admin credentials by necessity —
   # see the security note in scripts/pii_access_sync.py.
   pii-access-sync:
     build:
       context: .
       dockerfile: docker/pii-sync.Dockerfile
-    container_name: odc-directus-pii-sync
+    container_name: odc-tfgbv-pii-sync
     restart: unless-stopped
     depends_on:
       directus:

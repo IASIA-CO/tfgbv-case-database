@@ -15,6 +15,7 @@ audit trail of every change.
 - [Architecture](#architecture)
 - [Requirements](#requirements)
 - [Setup](#setup)
+- [Email](#email)
 - [Data model](#data-model)
 - [Roles and permissions](#roles-and-permissions)
 - [How PII is protected](#how-pii-is-protected)
@@ -23,6 +24,7 @@ audit trail of every change.
 - [Operations](#operations)
 - [Importing the legacy workbook](#importing-the-legacy-workbook)
 - [Handling real case data](#handling-real-case-data)
+- [Configuration not yet in the scripts](#configuration-not-yet-in-the-scripts)
 - [Project layout](#project-layout)
 
 ---
@@ -48,6 +50,7 @@ details. That approach had four problems this system is built to solve:
 | `directus` | `directus/directus:11` | Application, admin UI, REST/GraphQL API |
 | `database` | `postgis/postgis:16-3.4-alpine` | PostgreSQL with geospatial support |
 | `cache` | `redis:7-alpine` | Cache and rate limiting |
+| `mail` | `axllent/mailpit:v1.21` | Catches every outgoing email locally — see [Email](#email) |
 | `pii-access-sync` | built locally | Grants and revokes temporary PII access |
 
 PostGIS rather than plain Postgres because Directus uses geometry types for map fields.
@@ -115,12 +118,47 @@ python3 scripts/seed_roles.py
 Installs the sequences, triggers, and CHECK constraints described under
 [Database guarantees](#database-guarantees).
 
-**6. Sign in**
+**6. Build the extensions**
 
-Open <http://localhost:8055> and log in with the administrator credentials from `.env`.
+```bash
+for d in extensions/*/; do (cd "$d" && npm install && npx directus-extension build); done
+docker compose restart directus
+```
 
-All three scripts are idempotent — re-running them is safe and is the supported way to
-repair configuration that has drifted.
+Directus loads extensions from `dist/`, which is not committed (only source is tracked —
+see [Project layout](#project-layout)). This step is required after every fresh clone,
+and after editing any extension's `src/`.
+
+**7. Create one test user per role (optional)**
+
+```bash
+./scripts/create_role_users.sh
+```
+
+Creates an account for each of the five roles, all sharing one password printed at the
+end. Useful for verifying permissions match what each role should see. Pass
+`--reset-existing` to also reset passwords on accounts the script didn't create itself.
+
+**8. Sign in**
+
+Open <http://localhost:8057> and log in with the administrator credentials from `.env`.
+
+All scripts are idempotent — re-running them is safe and is the supported way to repair
+configuration that has drifted.
+
+---
+
+## Email
+
+Directus sends real email for password resets and user invites. In this stack, every
+outgoing message is caught by Mailpit instead of being delivered — open
+<http://localhost:8027> to read anything Directus has "sent," including reset links.
+Nothing ever reaches a real inbox, which is deliberate: it makes the reset flow testable
+without risking mail to an address you don't control.
+
+Before any real deployment, replace the `EMAIL_*` variables in `docker-compose.yml` with
+a real SMTP provider and remove the `mail` service — otherwise every password reset
+silently vanishes into a container no one can read.
 
 ---
 
@@ -290,13 +328,24 @@ Generates synthetic cases with realistic distributions — platform mix, harassm
 frequencies, mostly-stranger perpetrators, a long tail of unresolved cases — so that
 dashboards and reports show meaningful shape during development.
 
-Every generated record is invented. No row describes a real person or a real incident;
-PII names are deliberately non-human (`SYNTHETIC Survivor 042`), contact details use the
-reserved `.invalid` domain, and every case is tagged `[SYNTHETIC TEST DATA]`. Generation
-is deterministic, so the same command reproduces the same dataset.
+For richer, cross-tabulated data (where a sextortion case's perpetrator relation,
+platform mix, and harassment types actually cohere with each other, rather than being
+drawn independently), use `seed_realistic_data.py` instead — same interface, same
+guarantees, more internally-consistent output:
+
+```bash
+python3 scripts/seed_realistic_data.py --count 180
+```
+
+Every generated record, from either script, is invented. No row describes a real person
+or a real incident; PII names are deliberately non-human (`SYNTHETIC Survivor 042`),
+contact details use the reserved `.invalid` domain, and every case is tagged
+`[SYNTHETIC TEST DATA]`. Generation is deterministic, so the same command reproduces the
+same dataset.
 
 ```bash
 python3 scripts/seed_demo_data.py --purge
+python3 scripts/seed_realistic_data.py --purge
 ```
 
 **Purge before loading real case data.** Synthetic records are clearly labelled, but the
@@ -392,6 +441,33 @@ review the dry-run report before committing an import.
 
 ---
 
+## Configuration not yet in the scripts
+
+The line below says the scripts are the source of truth. As of this writing, that's true
+for the schema `seed_schema.py` describes, but the following were built directly against
+a running instance (API calls / admin UI) during a later working session, and **running
+`seed_schema.py` on a fresh database will not recreate them**:
+
+- The Review and Intervention sections on `cases` (severity moved into Review; a
+  mutually-exclusive Approved/Rejected decision field; Intervention hidden until a case
+  is Approved), and the `referral` many-to-many relation to `organizations`.
+- Conditional form fields based on `case_type` — a Technical Support case shows a reduced
+  set of fields matching its own legacy tracking sheet; a TFGBV case shows the full form.
+- The Insights dashboard (`TFGBV Case Analytics`) and its panels.
+- The "Cases" navigation folder (a schema-less parent, matching how `vocabulary` behaves)
+  with the real `cases` collection nested and relabeled underneath it as "TFGBV Case."
+- Project branding (name, colour), per-role 2FA enforcement policies, and a small
+  Custom CSS block sizing the "Create New" / "Add Existing" buttons consistently.
+
+None of this is destructive or hard to redo — it's ordinary Directus configuration — but
+until it's folded back into `seed_schema.py` (or a follow-up script), treat a fresh
+install as the *baseline* schema this document otherwise describes, not a full replica of
+whatever instance you copied this repository from. If you need the exact current state,
+export it from the live instance's Data Studio (Settings → Data Model → export) rather
+than assuming the scripts alone will produce it.
+
+---
+
 ## Project layout
 
 ```
@@ -400,13 +476,19 @@ docker-compose.yml          Service definitions
 .env.example                Template for .env
 docker/
   pii-sync.Dockerfile       Image for the access reconciler
+extensions/
+  directus-extension-m2o-buttons/      Custom "Create New / Add Existing" m2o interface
+  directus-extension-landing-page/     Pins a role's post-login landing page
+  (each: src/ tracked, node_modules/ and dist/ gitignored — see Setup, step 6)
 scripts/
   seed_schema.py            Collections, fields, relations, vocabularies
   seed_roles.py             Roles, policies, permissions
   migrations.sql            Sequences, triggers, constraints, indexes
   apply_migrations.sh       Applies migrations.sql
   pii_access_sync.py        Temporary PII access reconciler
-  seed_demo_data.py         Synthetic test data
+  create_role_users.sh      One test user per role, for verifying permissions
+  seed_demo_data.py         Synthetic test data (independent field draws)
+  seed_realistic_data.py    Synthetic test data (cross-tabulated, more realistic)
   import_legacy.py          One-off import of the legacy workbook
 docs/
   DECISIONS.md              Why the system is built this way; open questions

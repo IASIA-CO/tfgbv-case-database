@@ -1,0 +1,15 @@
+{
+  "name": "directus-extension-landing-page",
+  "description": "Pins last_page for chosen roles so they always land on a fixed route at sign-in.",
+  "version": "1.0.0",
+  "type": "module",
+  "directus:extension": {
+    "type": "hook",
+    "path": "dist/index.js",
+    "source": "src/index.js",
+    "host": "^11.0.0"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "latest"
+  }
+}
