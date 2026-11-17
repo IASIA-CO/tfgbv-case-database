@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Create one test user per Directus role so you can log in as each persona.
 #
-#   ./scripts/create_role_users.sh                 # create the 3 missing users
+#   ./scripts/create_role_users.sh                 # create any missing role users
 #   ./scripts/create_role_users.sh --reset-existing  # also reset editor@/sub@ passwords
 #
 # Reads ADMIN_EMAIL / ADMIN_PASSWORD from .env. Never touches modernflush@gmail.com.
@@ -23,7 +23,9 @@ TOKEN=$(curl -s -X POST "$BASE/auth/login" -H 'Content-Type: application/json' \
 [ -n "$TOKEN" ] || { echo "login failed - check ADMIN_EMAIL/ADMIN_PASSWORD in .env"; exit 1; }
 
 role_id() {
-  curl -s "$BASE/roles?filter[name][_eq]=$(printf %s "$1" | sed 's/ /%20/g')&fields=id" \
+  # -g: without it curl treats the [ ] in filter[...] as a URL glob, fails with exit 3,
+  # and set -euo pipefail ends the script silently.
+  curl -sg "$BASE/roles?filter[name][_eq]=$(printf %s "$1" | sed 's/ /%20/g')&fields=id" \
     -H "Authorization: Bearer $TOKEN" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p'
 }
 
@@ -45,7 +47,7 @@ create_user() { # email, role name, first, last
 
 reset_password() { # email
   local email=$1 uid
-  uid=$(curl -s "$BASE/users?filter[email][_eq]=$email&fields=id" \
+  uid=$(curl -sg "$BASE/users?filter[email][_eq]=$email&fields=id" \
         -H "Authorization: Bearer $TOKEN" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
   [ -n "$uid" ] || { echo "  !! no such user: $email"; return; }
   curl -s -o /dev/null -X PATCH "$BASE/users/$uid" \
@@ -58,6 +60,8 @@ echo "Creating missing role users on $BASE ..."
 create_user "author@gmail.com"     "Author"      "Test"  "Author"
 create_user "caseadmin@gmail.com"  "Admin"       "Case"  "Admin"
 create_user "superadmin@gmail.com" "Super Admin" "Super" "Admin"
+create_user "editor@gmail.com"     "Editor"      "Test"  "Editor"
+create_user "sub@gmail.com"        "Subscriber"  "Test"  "Subscriber"
 
 if [ "${1:-}" = "--reset-existing" ]; then
   echo "Resetting passwords for existing test users ..."
